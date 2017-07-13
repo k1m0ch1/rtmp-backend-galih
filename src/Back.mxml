@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Application xmlns:fx="http://ns.adobe.com/mxml/2009" 
+			   xmlns:s="library://ns.adobe.com/flex/spark" 
+			   xmlns:mx="library://ns.adobe.com/flex/mx" width="680" height="560" creationComplete="LiveStreams()">
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	
+	<fx:Script>
+		<![CDATA[
+			
+			import flash.display.MovieClip;
+			import flash.events.ActivityEvent;
+			import flash.events.MouseEvent;
+			import flash.events.NetStatusEvent;
+			import flash.media.Camera;
+			import flash.media.H264Profile;
+			import flash.media.H264VideoStreamSettings;
+			import flash.media.Microphone;
+			import flash.media.Video;
+			import flash.net.NetConnection;
+			import flash.net.NetStream;
+			
+			import mx.utils.ObjectUtil;
+			
+			var nc:NetConnection;
+			var ns:NetStream;
+			var video:Video;
+			var camera:Camera;
+			var mic:Microphone;
+			private var meta:Object;
+			var videoCodec:H264VideoStreamSettings;
+			
+			
+			
+			
+			public function LiveStreams()
+			{
+				startBtn.addEventListener(MouseEvent.CLICK, startHandler);
+/*				clearBtn.addEventListener(MouseEvent.CLICK, clearHandler);*/
+				stopBtn.addEventListener(MouseEvent.CLICK, stopHandler);
+			}
+			
+			private function ns_onMetaData(item:Object):void {
+				trace("meta");
+				trace(ObjectUtil.toString(item));
+				
+				
+			}
+			
+			private function ns_onCuePoint(item:Object):void {
+				trace("cue");
+			}
+			/*
+			* Connect and start publishing the live stream
+			*/
+			private function startHandler(event:MouseEvent):void {
+				trace("Okay, let's connect now");
+				
+				nc = new NetConnection();
+				nc.client=this;
+				nc.addEventListener(NetStatusEvent.NET_STATUS, netStatusHandler);
+				nc.connect(this.txtServer.text);
+			}
+			
+			
+			/*
+			* Disconnect from the server
+			*/
+			private function stopHandler(event:MouseEvent):void {
+				if (ns){
+					trace("Clearing MetaData");
+					ns.send("@clearDataFrame", "onMetaData");
+				}
+				trace("Now we're disconnecting");
+				nc.close();
+			}
+			
+			/*
+			* Clear the MetaData associated with the stream
+			*/
+			/*private function clearHandler(event:MouseEvent):void {
+				if (ns){
+					trace("Clearing MetaData");
+					ns.send("@clearDataFrame", "onMetaData");
+				}
+			}*/
+			
+			
+			private function netStatusHandler(event:NetStatusEvent):void
+			{
+				trace("connected is: " + nc.connected );
+				trace("event.info.level: " + event.info.level);
+				trace("event.info.code: " + event.info.code);
+				
+				switch (event.info.code)
+				{
+					case "NetConnection.Connect.Success":
+						trace("Congratulations! you're connected");
+						publishLiveStream();
+						break;
+					case "NetConnection.Connect.Rejected":
+						trace ("Oops! the connection was rejected");
+						break;
+					case "NetStream.Play.Stop":
+						trace("The stream has finished playing");
+						break;
+					case "NetStream.Play.StreamNotFound":
+						trace("The server could not find the stream you specified"); 
+						break;
+					case "NetStream.Publish.Start":
+						
+						trace("Adding metadata to the stream");
+						// when publishing starts, add the metadata to the stream
+						var metaData:Object = new Object();
+						metaData.title = "Stream Wisuda Unikom";
+						metaData.width = 200;
+						metaData.height = 150;
+						ns.send("@setDataFrame", "onMetaData", metaData);
+						break;
+					
+					case "NetStream.Publish.BadName":
+						trace("The stream name is already used");
+						break;
+				}
+			}
+			
+			public function onBWDone():void{
+			}
+			
+			private function activityHandler(event:ActivityEvent):void {
+				trace("activityHandler: " + event);
+				trace("activating: " + event.activating);
+			} 
+			
+			/*
+			* Create a live stream, attach the camera and microphone, and
+			* publish it to the local server
+			*/
+			private function publishLiveStream():void {
+				ns = new NetStream(nc);
+				ns.addEventListener(NetStatusEvent.NET_STATUS, netStatusHandler);
+				var nsClient:Object = {};
+				nsClient.onMetaData = ns_onMetaData;
+				nsClient.onCuePoint = ns_onCuePoint;
+				ns.client = nsClient;
+				
+				var pilihan_kamera:String = list_kamera.selectedIndex.toString();
+				var pilihan_microphone:int = list_microphone.selectedIndex;
+				camera = Camera.getCamera(pilihan_kamera);
+				mic = Microphone.getMicrophone(pilihan_microphone);
+				
+				if (camera != null){
+					
+					camera.addEventListener(ActivityEvent.ACTIVITY, activityHandler);
+					
+					video = new Video();
+					video.smoothing=true;
+					video.width=670;
+					video.height=453;
+					video.attachCamera(camera);
+					
+					videoCodec = new H264VideoStreamSettings();
+					videoCodec.setProfileLevel(H264Profile.MAIN,"3");
+					ns.videoStreamSettings = videoCodec;
+					ns.attachCamera(camera);
+					uic.addChild(video);
+				
+				}
+				
+				if (mic != null) {
+					mic.addEventListener(ActivityEvent.ACTIVITY, activityHandler);
+					mic.codec = "Speex";
+					mic.rate = 44;
+					ns.attachAudio(mic);
+					
+				}
+				
+				if (camera != null || mic != null){
+					// start publishing
+					// triggers NetStream.Publish.Start
+					ns.publish(this.txtStream.text, "live");
+				} else {
+					trace("Please check your camera and microphone");
+				}
+			} 
+			
+		]]>
+	</fx:Script>
+	
+	<!--<mx:UIComponent id="uic" x="5" y="102" width="680" height="480" />-->
+	
+	<mx:VideoDisplay id="uic"
+					 width="670"
+					 height="453"
+					 x="5"
+					 y="102"/>
+	
+	<mx:Button id="startBtn" x="15" y="70" label="Stream"/>
+	<!--<mx:Button id="clearBtn" x="93" y="70" label="Clear"/>-->
+	<mx:Button id="stopBtn" x="93" y="70" label="Stop"/>
+	
+	<mx:ComboBox open="LiveStreams()"
+				 close="LiveStreams()"
+				id="list_kamera"
+				dataProvider="{Camera.names}"
+				y="41"
+				x="15"/>
+	
+	<mx:ComboBox open="LiveStreams()"
+				 close="LiveStreams()"
+				 id="list_microphone"
+				 dataProvider="{Microphone.names}"
+				 y="41"
+				 x="290"/>
+	
+	<s:TextInput x="59" y="11" id="txtServer" text="rtmp://localhost/live"/>
+	<s:TextInput x="266" y="11" id="txtStream" text="stream"/>
+	<s:Label x="15" y="15" text="Server"/>
+	<s:Label x="206" y="16" text="Stream"/>
+	
+</s:Application>
